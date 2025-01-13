@@ -1,4 +1,6 @@
 ﻿#include "../exercise.h"
+#include <cstring>
+#include <numeric>  
 
 // READ: 类模板 <https://zh.cppreference.com/w/cpp/language/class_template>
 
@@ -10,6 +12,8 @@ struct Tensor4D {
     Tensor4D(unsigned int const shape_[4], T const *data_) {
         unsigned int size = 1;
         // TODO: 填入正确的 shape 并计算 size
+        std::memcpy(shape, shape_, 4 * sizeof(unsigned int));
+        size = std::accumulate(shape, shape + 4, 1, std::multiplies<unsigned int>());
         data = new T[size];
         std::memcpy(data, data_, size * sizeof(T));
     }
@@ -17,9 +21,9 @@ struct Tensor4D {
         delete[] data;
     }
 
-    // 为了保持简单，禁止复制和移动
-    Tensor4D(Tensor4D const &) = delete;
-    Tensor4D(Tensor4D &&) noexcept = delete;
+    // // 为了保持简单，禁止复制和移动
+    // Tensor4D(Tensor4D const &) = delete;
+    // Tensor4D(Tensor4D &&) noexcept = delete;
 
     // 这个加法需要支持“单向广播”。
     // 具体来说，`others` 可以具有与 `this` 不同的形状，形状不同的维度长度必须为 1。
@@ -28,9 +32,91 @@ struct Tensor4D {
     // 则 `this` 与 `others` 相加时，3 个形状为 `[1, 2, 1, 4]` 的子张量各自与 `others` 对应项相加。
     Tensor4D &operator+=(Tensor4D const &others) {
         // TODO: 实现单向广播的加法
+         // 检查形状是否兼容
+        for (int i = 0; i < 4; ++i) {
+            if (shape[i] != others.shape[i] && others.shape[i] != 1) {
+                throw std::invalid_argument("形状不兼容，无法进行广播运算");
+            }
+        }
+
+        // 计算每个维度的步长
+        unsigned int this_strides[4];
+        unsigned int other_strides[4];
+        
+        // 从最后一个维度开始计算步长
+        this_strides[3] = 1;
+        other_strides[3] = 1;
+        
+        // 计算其他维度的步长
+        for (int i = 2; i >= 0; --i) {
+            this_strides[i] = this_strides[i + 1] * shape[i + 1];
+            other_strides[i] = other_strides[i + 1] * others.shape[i + 1];
+        }
+
+        // 遍历所有元素
+        for (unsigned int i = 0; i < shape[0]; ++i) {
+            for (unsigned int j = 0; j < shape[1]; ++j) {
+                for (unsigned int k = 0; k < shape[2]; ++k) {
+                    for (unsigned int l = 0; l < shape[3]; ++l) {
+                        // 计算当前元素在 this 中的索引
+                        unsigned int this_idx = i * this_strides[0] + 
+                                              j * this_strides[1] + 
+                                              k * this_strides[2] + 
+                                              l * this_strides[3];
+                        
+                        // 计算对应元素在 others 中的索引（考虑广播）
+                        unsigned int other_idx = (i % others.shape[0]) * other_strides[0] + 
+                                               (j % others.shape[1]) * other_strides[1] + 
+                                               (k % others.shape[2]) * other_strides[2] + 
+                                               (l % others.shape[3]) * other_strides[3];
+                        
+                        // 执行加法运算
+                        data[this_idx] += others.data[other_idx];
+                    }
+                }
+            }
+        }
         return *this;
     }
 };
+
+
+        // // 计算每个维度的步长
+        // unsigned int this_strides[4];
+        // unsigned int other_strides[4];
+        // this_strides[3] = 1;
+        // other_strides[3] = 1;
+        // for (int i = 2; i >= 0; --i) {
+        //     this_strides[i] = this_strides[i + 1] * shape[i + 1];
+        //     other_strides[i] = other_strides[i + 1] * others.shape[i + 1];
+        // }
+
+        // // 遍历所有元素
+        // for (unsigned int i = 0; i < shape[0]; ++i) {
+        //     for (unsigned int j = 0; j < shape[1]; ++j) {
+        //         for (unsigned int k = 0; k < shape[2]; ++k) {
+        //             for (unsigned int l = 0; l < shape[3]; ++l) {
+        //                 // 计算当前元素的索引
+        //                 unsigned int this_idx = i * this_strides[0] + 
+        //                                     j * this_strides[1] + 
+        //                                     k * this_strides[2] + 
+        //                                     l * this_strides[3];
+                        
+        //                 // 计算对应元素的索引（考虑广播）
+        //                 unsigned int other_idx = (i % others.shape[0]) * other_strides[0] + 
+        //                                     (j % others.shape[1]) * other_strides[1] + 
+        //                                     (k % others.shape[2]) * other_strides[2] + 
+        //                                     (l % others.shape[3]) * other_strides[3];
+                        
+        //                 // 执行加法
+        //                 data[this_idx] += others.data[other_idx];
+        //             }
+        //         }
+        //     }
+        // }
+//         return *this;
+//     }
+// };
 
 // ---- 不要修改以下代码 ----
 int main(int argc, char **argv) {
@@ -46,8 +132,8 @@ int main(int argc, char **argv) {
             17, 18, 19, 20,
             21, 22, 23, 24};
         // clang-format on
-        auto t0 = Tensor4D(shape, data);
-        auto t1 = Tensor4D(shape, data);
+        auto t0 = Tensor4D<int>(shape, data);
+        auto t1 = Tensor4D<int>(shape, data);
         t0 += t1;
         for (auto i = 0u; i < sizeof(data) / sizeof(*data); ++i) {
             ASSERT(t0.data[i] == data[i] * 2, "Tensor doubled by plus its self.");
@@ -77,8 +163,8 @@ int main(int argc, char **argv) {
             1};
         // clang-format on
 
-        auto t0 = Tensor4D(s0, d0);
-        auto t1 = Tensor4D(s1, d1);
+        auto t0 = Tensor4D<float>(s0, d0);
+        auto t1 = Tensor4D<float>(s1, d1);
         t0 += t1;
         for (auto i = 0u; i < sizeof(d0) / sizeof(*d0); ++i) {
             ASSERT(t0.data[i] == 7.f, "Every element of t0 should be 7 after adding t1 to it.");
@@ -99,8 +185,8 @@ int main(int argc, char **argv) {
         unsigned int s1[]{1, 1, 1, 1};
         double d1[]{1};
 
-        auto t0 = Tensor4D(s0, d0);
-        auto t1 = Tensor4D(s1, d1);
+        auto t0 = Tensor4D<double>(s0, d0);
+        auto t1 = Tensor4D<double>(s1, d1);
         t0 += t1;
         for (auto i = 0u; i < sizeof(d0) / sizeof(*d0); ++i) {
             ASSERT(t0.data[i] == d0[i] + 1, "Every element of t0 should be incremented by 1 after adding t1 to it.");
